@@ -944,3 +944,59 @@ void desk_supply_read(struct desk_supply *out)
 		snprintf(out->source, sizeof out->source, "GPU");
 	}
 }
+
+/* The same, off the compositor's thread. On some laptops a battery's files
+ * are answered by the firmware (ACPI, the embedded controller), and each
+ * read can take milliseconds or tens of them: once a second on the
+ * compositor's thread, that was a desk that stuttered every second for a
+ * clock nobody was looking at. So the reading is taken on a thread of its
+ * own, as the mixer's is (volume_ask), and the clock shows the last one. */
+static pthread_mutex_t g_sup_lock = PTHREAD_MUTEX_INITIALIZER;
+static struct desk_supply g_sup;
+static unsigned g_sup_serial;      /* readings taken; 0 for none yet */
+static double g_sup_at = -1e9;     /* when the last one was asked for */
+static atomic_bool g_sup_asking;
+
+static void *supply_ask(void *arg)
+{
+	(void)arg;
+	struct desk_supply s;
+	desk_supply_read(&s);
+	pthread_mutex_lock(&g_sup_lock);
+	g_sup = s;
+	if (++g_sup_serial == 0) {
+		g_sup_serial = 1;   /* 0 is for none yet */
+	}
+	pthread_mutex_unlock(&g_sup_lock);
+	atomic_store(&g_sup_asking, false);
+	return NULL;
+}
+
+bool desk_supply_latest(struct desk_supply *out, double max_age, unsigned *serial)
+{
+	double at = now_sec();
+	pthread_mutex_lock(&g_sup_lock);
+	bool stale = at - g_sup_at >= max_age;
+	if (stale) {
+		g_sup_at = at;
+	}
+	bool have = g_sup_serial != 0;
+	if (have) {
+		*out = g_sup;
+	}
+	if (serial) {
+		*serial = g_sup_serial;
+	}
+	pthread_mutex_unlock(&g_sup_lock);
+	/* one reading at a time: desk_supply_read keeps what it read last
+	 * (the processor's energy counter) to tell what was drawn since */
+	if (stale && !atomic_exchange(&g_sup_asking, true)) {
+		pthread_t th;
+		if (pthread_create(&th, NULL, supply_ask, NULL) == 0) {
+			pthread_detach(th);
+		} else {
+			atomic_store(&g_sup_asking, false);
+		}
+	}
+	return have;
+}

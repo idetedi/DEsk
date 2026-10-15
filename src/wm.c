@@ -352,6 +352,9 @@ struct desk_output {
 	 * window on the other desktop is not ours to turn off, the black laid
 	 * over it instead and whether that has been shown yet. */
 	bool off, dark, dark_shown;
+	/* The machine waiting to sleep until the door is down: the frames this
+	 * screen has had with it since (sleep_door_check). */
+	int sleep_seen;
 	struct wlr_output_mode *dark_mode;
 	int dark_w, dark_h, dark_refresh;
 	struct wlr_scene_rect *dark_cover;
@@ -684,7 +687,7 @@ struct desk_server {
 		bool vol_drag;
 		double vol_scroll;
 		struct wl_event_source *timer;
-		double supply_at;
+		unsigned supply_serial;   /* the reading the record last took */
 		struct desk_supply supply;
 		float hist[3600];
 		int hist_n, hist_at;
@@ -7465,11 +7468,13 @@ static void screen_apply(struct desk_server *server)
  * (the keys of a laptop, its power manager) may have turned it. */
 static void screen_read(struct desk_server *server)
 {
-	struct desk_supply su;
-	desk_supply_read(&su);
-	server->cc_screen_ok = su.have_backlight;
-	if (su.have_backlight && server->cc_grab != DESK_CC_SCREEN) {
-		server->cc_screen = su.backlight;
+	/* the backlight alone: not the batteries, which can be slow to answer
+	 * (desk_supply_latest) */
+	char name[256];
+	double max, now;
+	server->cc_screen_ok = desk_backlight_find(name, sizeof name, &max, &now);
+	if (server->cc_screen_ok && server->cc_grab != DESK_CC_SCREEN) {
+		server->cc_screen = now / max > 1.0 ? 1.0 : now / max;
 	}
 }
 
@@ -14625,10 +14630,12 @@ static bool clock_axis(struct desk_server *server, const struct wlr_pointer_axis
  * record of what was drawn is a second at a time all the same. */
 static void clock_tick(struct desk_server *server)
 {
+	/* taken on a thread (desk_supply_latest): a laptop's battery can take
+	 * its time to answer, and the desk must not wait for it */
 	struct desk_supply *s = &server->clk.supply;
-	if (real_sec() - server->clk.supply_at >= 0.95) {
-		server->clk.supply_at = real_sec();
-		desk_supply_read(s);
+	unsigned serial = 0;
+	if (desk_supply_latest(s, 0.95, &serial) && serial != server->clk.supply_serial) {
+		server->clk.supply_serial = serial;
 		if (s->draw_w >= 0.0) {
 			server->clk.hist[server->clk.hist_at] = (float)s->draw_w;
 			server->clk.hist_at = (server->clk.hist_at + 1) % 3600;
@@ -16876,10 +16883,74 @@ static void lock_tick(struct desk_server *server)
 	}
 }
 
+/* The door all the way down and nothing of the room through it: not
+ * coming (the turn to the bookcase, the fade, the walk up to it), not
+ * going out of the room. */
+static bool lock_door_down(const struct desk_server *server)
+{
+	return locked(server) && !server->lock_film && !server->lock_fade_in
+		&& !server->lock_walk && !server->lock_leaving;
+}
+
+/* A door already on its way (Super+L, and then the lid shut) comes the
+ * rest of the way at once. */
+static void lock_down_now(struct desk_server *server)
+{
+	if (server->lock_film) {
+		server->lock_film = false;
+		server->lock_from = LOCK_FROM_ELSEWHERE;
+	}
+	server->lock_fade_in = false;
+	server->lock_walk = false;
+	if (server->lock_leaving) {
+		server->lock_leaving = false;
+		server->lock_caret_on = true;
+		if (server->lock_inside) {
+			cairo_surface_destroy(server->lock_inside);
+			server->lock_inside = NULL;
+		}
+	}
+	paint_lock(server);
+}
+
+/* The machine about to sleep is waiting for the door (lock.c): it may go
+ * once every lit screen has shown it -- a frame drawn with the door, and
+ * the next one, which is not asked for until that one is on the glass. A
+ * screen that is off or gone dark shows nothing to wait for. */
+static void sleep_door_check(struct desk_server *server)
+{
+	if (!desk_lock_sleep_pending() || !lock_door_down(server)) {
+		return;
+	}
+	struct desk_output *output;
+	wl_list_for_each(output, &server->outputs, link) {
+		if (!output->wlr_output->enabled || output->dark) {
+			continue;
+		}
+		if (output->sleep_seen < 2) {
+			return;
+		}
+	}
+	desk_lock_sleep_ready();
+}
+
 static void lock_cb(void *data)
 {
+	struct desk_server *server = data;
 	/* the machine may be about to sleep: down at once, no fading */
-	lock_begin(data, LOCK_COME_NOW, NULL, LOCK_FROM_ELSEWHERE);
+	if (locked(server)) {
+		if (server->lock_phase != LOCK_OPEN) {
+			lock_down_now(server);
+		}
+	} else {
+		lock_begin(server, LOCK_COME_NOW, NULL, LOCK_FROM_ELSEWHERE);
+	}
+	struct desk_output *output;
+	wl_list_for_each(output, &server->outputs, link) {
+		output->sleep_seen = 0;
+	}
+	server_schedule_frames(server);
+	sleep_door_check(server);
 }
 
 static void unlock_cb(void *data)
@@ -20524,6 +20595,12 @@ static void output_frame(struct wl_listener *listener, void *data)
 	double f1 = g_prof.on ? real_sec() : 0.0;
 	double c1 = g_trace.f ? thread_cpu_sec() : 0.0;
 	wlr_scene_output_commit(scene_output, NULL);
+	if (desk_lock_sleep_pending() && lock_door_down(output->server)) {
+		/* the machine waits to sleep until this screen has shown the door */
+		output->sleep_seen++;
+		wlr_output_schedule_frame(output->wlr_output);
+		sleep_door_check(output->server);
+	}
 	struct timespec now;
 	clock_gettime(CLOCK_MONOTONIC, &now);
 	wlr_scene_output_send_frame_done(scene_output, &now);

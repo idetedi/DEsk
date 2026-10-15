@@ -180,6 +180,79 @@ static int on_unlock(sd_bus_message *m, void *data, sd_bus_error *err)
 	return 0;
 }
 
+/* The machine going to sleep waits for the door: logind's "delay" lock on
+ * sleep, held while awake and let go once the door has been on every lit
+ * screen (desk_lock_sleep_ready) -- or after SLEEP_HOLD_MS whatever
+ * happens, inside logind's own limit (InhibitDelayMaxSec, five seconds
+ * unless set otherwise). Without it the machine went down with the desk
+ * still on the screen, and opening the lid showed it before the door. */
+#define SLEEP_HOLD_MS 4000
+static int g_sleep_fd = -1;
+static bool g_sleep_pending;
+static struct wl_event_source *g_sleep_timer;
+
+static void sleep_let_go(void)
+{
+	g_sleep_pending = false;
+	if (g_sleep_timer) {
+		wl_event_source_timer_update(g_sleep_timer, 0);
+	}
+	if (g_sleep_fd >= 0) {
+		close(g_sleep_fd);
+		g_sleep_fd = -1;
+		wlr_log(WLR_INFO, "lock: the door is down; the machine may sleep");
+	}
+}
+
+static int sleep_timeout(void *data)
+{
+	(void)data;
+	if (g_sleep_pending) {
+		wlr_log(WLR_INFO, "lock: the door was not shown in time; the machine sleeps anyway");
+	}
+	sleep_let_go();
+	return 0;
+}
+
+static int sleep_held(sd_bus_message *m, void *data, sd_bus_error *err)
+{
+	(void)data;
+	(void)err;
+	int fd = -1;
+	if (sd_bus_message_is_method_error(m, NULL) || sd_bus_message_read(m, "h", &fd) < 0
+		|| fd < 0) {
+		const sd_bus_error *e = sd_bus_message_get_error(m);
+		wlr_log(WLR_INFO, "lock: logind will not wait for the door (%s)",
+			e && e->message ? e->message : "no answer");
+		return 0;
+	}
+	/* the message owns its descriptor: a copy of our own, kept from the
+	 * programs the desk starts */
+	int mine = fcntl(fd, F_DUPFD_CLOEXEC, 3);
+	if (mine < 0) {
+		return 0;
+	}
+	if (g_sleep_fd >= 0) {
+		close(g_sleep_fd);
+	}
+	g_sleep_fd = mine;
+	return 0;
+}
+
+/* Asked for, not waited for: the answer comes through the loop. */
+static void sleep_hold(void)
+{
+	if (g_sleep_fd >= 0) {
+		return;
+	}
+	if (sd_bus_call_method_async(g_sys, NULL, "org.freedesktop.login1",
+			"/org/freedesktop/login1", "org.freedesktop.login1.Manager", "Inhibit",
+			sleep_held, NULL, "ssss", "sleep", "DEsk", "Bringing the front door down first",
+			"delay") < 0) {
+		wlr_log(WLR_INFO, "lock: could not ask logind to wait for the door");
+	}
+}
+
 static int on_sleep(sd_bus_message *m, void *data, sd_bus_error *err)
 {
 	(void)data;
@@ -187,9 +260,30 @@ static int on_sleep(sd_bus_message *m, void *data, sd_bus_error *err)
 	int going = 0;
 	if (sd_bus_message_read(m, "b", &going) >= 0 && going) {
 		wlr_log(WLR_INFO, "lock: the machine is going to sleep");
+		/* before the lock: with no screen lit it is ready at once */
+		g_sleep_pending = g_sleep_fd >= 0;
+		if (g_sleep_pending && g_sleep_timer) {
+			wl_event_source_timer_update(g_sleep_timer, SLEEP_HOLD_MS);
+		}
 		g_lock(g_data);
+	} else {
+		/* awake: held again for the next time */
+		sleep_let_go();
+		sleep_hold();
 	}
 	return 0;
+}
+
+bool desk_lock_sleep_pending(void)
+{
+	return g_sleep_pending;
+}
+
+void desk_lock_sleep_ready(void)
+{
+	if (g_sleep_pending) {
+		sleep_let_go();
+	}
 }
 
 static int bus_ready(int fd, uint32_t mask, void *data)
@@ -239,6 +333,8 @@ bool desk_lock_watch(struct wl_event_loop *loop, void (*lock)(void *data),
 		"org.freedesktop.login1.Session", "Unlock", on_unlock, NULL);
 	sd_bus_match_signal(g_sys, NULL, "org.freedesktop.login1", "/org/freedesktop/login1",
 		"org.freedesktop.login1.Manager", "PrepareForSleep", on_sleep, NULL);
+	g_sleep_timer = wl_event_loop_add_timer(loop, sleep_timeout, NULL);
+	sleep_hold();
 	wl_event_loop_add_fd(loop, sd_bus_get_fd(g_sys), WL_EVENT_READABLE, bus_ready, NULL);
 	bus_ready(0, 0, NULL);
 	wlr_log(WLR_INFO, "lock: watching %s", g_session_path);
@@ -267,5 +363,14 @@ bool desk_lock_watch(struct wl_event_loop *loop, void (*lock)(void *data),
 void desk_lock_hint(bool locked)
 {
 	(void)locked;
+}
+
+bool desk_lock_sleep_pending(void)
+{
+	return false;
+}
+
+void desk_lock_sleep_ready(void)
+{
 }
 #endif

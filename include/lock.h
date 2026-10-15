@@ -30,3 +30,9 @@ bool desk_lock_check(struct wl_event_loop *loop, const char *password,
 bool desk_lock_watch(struct wl_event_loop *loop, void (*lock)(void *data),
 	void (*unlock)(void *data), void *data);
 void desk_lock_hint(bool locked);
+/* The machine about to sleep waits for the door (logind's delay lock, held
+ * while awake): pending from then until desk_lock_sleep_ready, which the
+ * compositor calls once the door has been on every lit screen -- or until
+ * a few seconds have gone by, whatever happens. */
+bool desk_lock_sleep_pending(void);
+void desk_lock_sleep_ready(void);

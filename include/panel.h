@@ -67,6 +67,13 @@ struct desk_supply {
 	double backlight;      /* 0..1 */
 };
 void desk_supply_read(struct desk_supply *out);
+/* The same, never waited for: the last reading, with a new one taken on a
+ * thread of its own when that was asked for max_age seconds ago or more
+ * (a laptop's battery can be slow to answer). False, and out untouched,
+ * until there is one; serial counts the readings, so that the caller can
+ * tell a new one. desk_supply_read is not to be called beside it: they
+ * share what the processor's energy counter read last. */
+bool desk_supply_latest(struct desk_supply *out, double max_age, unsigned *serial);
 /* The backlight that reading is of: its name under class/backlight, its
  * full scale and where it is now. False when there is none. */
 bool desk_backlight_find(char *name, size_t n, double *max, double *now);

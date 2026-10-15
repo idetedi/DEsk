@@ -1151,6 +1151,9 @@ struct desk_server {
 	bool lock_fade_in, lock_walk, lock_refused, lock_caps, lock_caret_on, lock_from_desk;
 	bool lock_picture_tried, lock_hand;
 	char lock_name[128];
+	/* what the password check said (PAM: an account locked after too many
+	 * tries, a finger wanted), under the plate until the next try */
+	char lock_said[512];
 	cairo_surface_t *lock_picture, *lock_inside;
 	struct wlr_scene_tree *layer_lock;
 	struct wlr_scene_rect *lock_cover;
@@ -16245,6 +16248,7 @@ static void lock_look(const struct desk_server *server, struct desk_lock_look *l
 	lk->caret = server->lock_caret_on && server->lock_phase == LOCK_SHUT;
 	lk->checking = server->lock_phase == LOCK_CHECK;
 	lk->caps = server->lock_caps;
+	lk->said = server->lock_said[0] ? server->lock_said : NULL;
 	lk->now_s = now;
 	lk->steady = 1.0 - g_bounce;
 	if (server->lock_walk) {
@@ -16484,6 +16488,7 @@ static void lock_begin(struct desk_server *server, int how, cairo_surface_t *ins
 	server->lock_refused = false;
 	server->lock_typed = 0;
 	server->lock_caret_on = true;
+	server->lock_said[0] = '\0';
 	lock_wipe(server);
 	if (!server->lock_name[0]) {
 		char login[64];
@@ -16585,6 +16590,7 @@ static void lock_finish(struct desk_server *server)
 	server->lock_phase = LOCK_NONE;
 	server->lock_film = false;
 	server->lock_leaving = false;
+	server->lock_said[0] = '\0';
 	lock_wipe(server);
 	if (server->lock_inside) {
 		cairo_surface_destroy(server->lock_inside);
@@ -16692,6 +16698,20 @@ static void lock_checked(bool ok, void *data)
 	server_schedule_frames(server);
 }
 
+/* What the check says as it goes: under the plate, where it can be read
+ * -- why the key will not turn when it is the right one (pam_faillock), or
+ * a finger wanted on the reader (pam_fprintd). */
+static void lock_heard(const char *text, void *data)
+{
+	struct desk_server *server = data;
+	if (!locked(server)) {
+		return;
+	}
+	snprintf(server->lock_said, sizeof server->lock_said, "%s", text ? text : "");
+	paint_lock(server);
+	server_schedule_frames(server);
+}
+
 /* The key will not go round: back to waiting, leaning back out. */
 static void lock_refuse(struct desk_server *server)
 {
@@ -16724,9 +16744,11 @@ static void lock_submit(struct desk_server *server)
 	}
 	server->lock_fail_at = 0.0;
 	server->lock_refused = false;
+	/* a new try: what was said of the last one is for the last one */
+	server->lock_said[0] = '\0';
 	desk_sound_play_in(DESK_SND_KEY_IN, 0.3, 0.55, 0.0, real_secs(LOCK_LEAN_S * 0.75));
 	if (!desk_lock_check(wl_display_get_event_loop(server->wl_display),
-			server->lock_pass, lock_checked, server)) {
+			server->lock_pass, lock_checked, lock_heard, server)) {
 		lock_wipe(server);
 		lock_checked(false, server);
 		return;
@@ -18810,8 +18832,11 @@ static bool ti_mods_in(struct desk_server *server, const struct wlr_keyboard_mod
  * OUT on the Control Panel ends it: the windows asked to close first, and
  * one that will not holds it up until it is asked again. Counted as they
  * come, at the door too, and never passed on to a window; acted on once no
- * other has come for CAD_GAP_S (the third at once). desk-ctl does the same
- * from a terminal or another VT, by signal (cad_signal). */
+ * other has come for CAD_GAP_S (the third at once). At the door three
+ * times is only twice: whoever is in front of a locked desk may set it
+ * right, but not end somebody else's session and the unsaved work in it
+ * (from another VT, logged in, desk-ctl logout still does). desk-ctl does
+ * the same from a terminal or another VT, by signal (cad_signal). */
 #define CAD_GAP_S 0.8
 
 /* Everything the desk itself has open or in hand put away, every picture it
@@ -18885,6 +18910,12 @@ static void cad_press(struct desk_server *server)
 		server->cad_n = 0;
 		if (server->cad_timer) {
 			wl_event_source_timer_update(server->cad_timer, 0);
+		}
+		if (locked(server)) {
+			wlr_log(WLR_INFO, "ctrl+alt+del three times at the door: set right, "
+				"the session kept");
+			cad_reset(server);
+			return;
 		}
 		wlr_log(WLR_INFO, "ctrl+alt+del three times: the session ends");
 		end_begin(server, END_LOG_OUT);

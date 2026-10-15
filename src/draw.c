@@ -34222,9 +34222,61 @@ static void lk_cords(cairo_t *cr, const struct lk_scene *sc, const struct lk_cam
 	}
 }
 
+/* Under the plate, what the door has to say. What the check itself said
+ * (PAM) is why: a finger wanted while it is checked, and after it the
+ * account locked for too many tries -- unless Caps Lock is on, which is
+ * the likelier why while typing again. A line at a time (PAM's are two at
+ * most), shrunk to the plate's width rather than running off the door. */
+static void lk_slot_say(cairo_t *cr, const struct lk_scene *sc, const struct lk_cam *cam,
+	const struct desk_lock_look *lk, double fade)
+{
+	const char *said = lk->said && *lk->said ? lk->said : NULL;
+	const char *say = lk->checking ? (said ? said : TR("Checking\xe2\x80\xa6"))
+		: lk->caps ? TR("Caps Lock is on") : said;
+	double cx = (LK_WIN_X0 + LK_WIN_X1) * 0.5;
+	cairo_matrix_t m;
+	if (!say || !lk_face_matrix(sc, cam, v3(cx, LK_PL_Y0 - 0.026, LK_DT), &m)) {
+		return;
+	}
+	cairo_save(cr);
+	cairo_transform(cr, &m);
+	char lines[512];
+	snprintf(lines, sizeof lines, "%s", say);
+	const char *line[2] = { lines, NULL };
+	char *nl = strchr(lines, '\n');
+	if (nl) {
+		*nl = '\0';
+		line[1] = nl + 1;
+	}
+	/* both lines at one size: the one the longer fits at */
+	double max_w = (LK_PL_X1 - LK_PL_X0) * 1.15, size = 0.022;
+	for (int i = 0; i < 2 && line[i] && *line[i]; i++) {
+		char clean[1024];
+		const char *s = utf8_clean(line[i], clean, sizeof clean);
+		cairo_save(cr);
+		desk_font_select(cr, DESK_FONT_PRINT, s, true, false);
+		cairo_set_font_size(cr, size);
+		cairo_text_extents_t ext;
+		cairo_text_extents(cr, s, &ext);
+		cairo_restore(cr);
+		if (ext.width > max_w) {
+			size = fmax(size * max_w / ext.width, 0.022 * 0.40);
+		}
+	}
+	double y = 0.0;
+	for (int i = 0; i < 2 && line[i] && *line[i]; i++) {
+		show_text_as(cr, DESK_FONT_PRINT, line[i], 0.0008, y + 0.0010, size, true,
+			0.0, 0.0, 0.0, 0.60 * fade, 0);
+		show_text_as(cr, DESK_FONT_PRINT, line[i], 0.0, y, size, true, 1.0, 0.86, 0.62,
+			0.90 * fade, 0);
+		y += size * 1.30;
+	}
+	cairo_restore(cr);
+}
+
 /* The slot: a light for each letter in, the caret after them; a light
  * running along them while it is checked; red, and what was wrong, when
- * told no. Under the plate, what it has to say. */
+ * told no. Under the plate, what it has to say (lk_slot_say). */
 static void lk_slot(cairo_t *cr, const struct lk_scene *sc, const struct lk_cam *cam,
 	const struct desk_lock_look *lk, double fade)
 {
@@ -34251,6 +34303,8 @@ static void lk_slot(cairo_t *cr, const struct lk_scene *sc, const struct lk_cam 
 		show_text_as(cr, DESK_FONT_PRINT, TR("That is not it"), shake, wh * 0.22, wh * 0.52,
 			true, 1.0, 0.42, 0.26, a, 0);
 		cairo_restore(cr);
+		/* and why, when the check said (the account locked) */
+		lk_slot_say(cr, sc, cam, lk, fade);
 		return;
 	}
 	enum { N = 14 };
@@ -34300,16 +34354,7 @@ static void lk_slot(cairo_t *cr, const struct lk_scene *sc, const struct lk_cam 
 		cairo_fill(cr);
 	}
 	cairo_restore(cr);
-	const char *say = lk->checking ? TR("Checking\xe2\x80\xa6") : lk->caps ? TR("Caps Lock is on") : NULL;
-	if (say && lk_face_matrix(sc, cam, v3(cx, LK_PL_Y0 - 0.026, LK_DT), &m)) {
-		cairo_save(cr);
-		cairo_transform(cr, &m);
-		show_text_as(cr, DESK_FONT_PRINT, say, 0.0008, 0.0010, 0.022, true, 0.0, 0.0, 0.0,
-			0.60 * fade, 0);
-		show_text_as(cr, DESK_FONT_PRINT, say, 0.0, 0.0, 0.022, true, 1.0, 0.86, 0.62,
-			0.90 * fade, 0);
-		cairo_restore(cr);
-	}
+	lk_slot_say(cr, sc, cam, lk, fade);
 }
 
 /* the colour along each edge of the picture of the room: the floor, the

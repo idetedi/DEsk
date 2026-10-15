@@ -612,6 +612,19 @@ static int write_lock(const char *path, int w, int h)
 	looks[11].turn = 1.0;
 	looks[11].open = 1.0;
 	looks[11].push = 0.85;
+	/* what the password check may say under the plate, while it is
+	 * checked and once told no (DESK_LOCK_SAID="a line|a second line") */
+	static char said[512];
+	const char *say = getenv("DESK_LOCK_SAID");
+	if (say && *say) {
+		snprintf(said, sizeof said, "%s", say);
+		for (char *p = said; *p; p++) {
+			if (*p == '|') {
+				*p = '\n';
+			}
+		}
+		looks[1].said = looks[4].said = looks[5].said = said;
+	}
 	if (getenv("DESK_LOCK_WALK")) {
 		/* the walk in alone, push 0.15 to 1 (DESK_LOCK_WALK=console: into
 		 * the Control Panel instead -- with the shelf's picture, for the room) */

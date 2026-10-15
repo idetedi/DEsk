@@ -36,6 +36,9 @@
 
 /* ---- the password ---- */
 
+/* Down the pipe from the thread to the loop: something said, and the end. */
+enum { CHECK_SAID = 2, CHECK_DONE = 1 };
+
 struct check {
 	char user[64];
 	char pass[512];
@@ -44,12 +47,70 @@ struct check {
 	int fd[2];
 	struct wl_event_source *src;
 	void (*done)(bool ok, void *data);
+	void (*said)(const char *text, void *data);
 	void *data;
+	/* what PAM has said so far: its last two lines, joined by '\n' */
+	pthread_mutex_t said_lock;
+	char said_text[512];
 };
+
+static void check_tell(struct check *c, char what)
+{
+	while (write(c->fd[1], &what, 1) < 0 && errno == EINTR) {
+		;
+	}
+}
+
+/* A line PAM has to say -- "The account is locked due to 3 failed logins.",
+ * "Place your finger on the fingerprint reader" -- kept for the door, the
+ * line before it with it and anything older let go. */
+static void check_said(struct check *c, const char *msg)
+{
+	if (!msg) {
+		return;
+	}
+	char line[200];
+	snprintf(line, sizeof line, "%s", msg);
+	/* one message, one line: no breaks in it, none at its end */
+	for (char *p = line; *p; p++) {
+		if (*p == '\n' || *p == '\r' || *p == '\t') {
+			*p = ' ';
+		}
+	}
+	size_t n = strlen(line);
+	while (n > 0 && line[n - 1] == ' ') {
+		line[--n] = '\0';
+	}
+	if (!line[0]) {
+		return;
+	}
+	pthread_mutex_lock(&c->said_lock);
+	/* the last line there is now kept, as the first */
+	char before[sizeof c->said_text] = "";
+	if (c->said_text[0]) {
+		const char *nl = strchr(c->said_text, '\n');
+		const char *from = nl ? nl + 1 : c->said_text;
+		memcpy(before, from, strlen(from) + 1);
+	}
+	size_t room = sizeof c->said_text - 1, k = 0;
+	size_t nb = strlen(before);
+	if (nb > 0) {
+		k = nb < room ? nb : room;
+		memcpy(c->said_text, before, k);
+		if (k < room) {
+			c->said_text[k++] = '\n';
+		}
+	}
+	size_t take = n < room - k ? n : room - k;
+	memcpy(c->said_text + k, line, take);
+	c->said_text[k + take] = '\0';
+	pthread_mutex_unlock(&c->said_lock);
+	check_tell(c, CHECK_SAID);
+}
 
 static int conv(int n, const struct pam_message **msg, struct pam_response **resp, void *data)
 {
-	const struct check *c = data;
+	struct check *c = data;
 	struct pam_response *r = calloc((size_t)n, sizeof *r);
 	if (!r) {
 		return PAM_BUF_ERR;
@@ -65,6 +126,9 @@ static int conv(int n, const struct pam_message **msg, struct pam_response **res
 				free(r);
 				return PAM_BUF_ERR;
 			}
+		} else if (style == PAM_ERROR_MSG || style == PAM_TEXT_INFO) {
+			wlr_log(WLR_INFO, "lock: PAM says: %s", msg[i]->msg ? msg[i]->msg : "");
+			check_said(c, msg[i]->msg);
 		}
 	}
 	*resp = r;
@@ -89,10 +153,8 @@ static void *check_thread(void *arg)
 	}
 	c->ok = r == PAM_SUCCESS;
 	explicit_bzero(c->pass, sizeof c->pass);
-	char one = 1;
-	while (write(c->fd[1], &one, 1) < 0 && errno == EINTR) {
-		;
-	}
+	/* the last the thread touches of it: the loop frees it on reading this */
+	check_tell(c, CHECK_DONE);
 	return NULL;
 }
 
@@ -100,13 +162,40 @@ static int check_landed(int fd, uint32_t mask, void *data)
 {
 	(void)mask;
 	struct check *c = data;
-	char one;
-	while (read(fd, &one, 1) < 0 && errno == EINTR) {
-		;
+	/* everything the thread has sent so far, in the order sent: what was
+	 * said comes before the end */
+	bool spoke = false, over = false;
+	char buf[64];
+	for (;;) {
+		ssize_t n = read(fd, buf, sizeof buf);
+		if (n < 0 && errno == EINTR) {
+			continue;
+		}
+		if (n <= 0) {
+			break;
+		}
+		for (ssize_t i = 0; i < n; i++) {
+			if (buf[i] == CHECK_SAID) {
+				spoke = true;
+			} else {
+				over = true;
+			}
+		}
+	}
+	if (spoke && c->said) {
+		char text[sizeof c->said_text];
+		pthread_mutex_lock(&c->said_lock);
+		memcpy(text, c->said_text, sizeof text);
+		pthread_mutex_unlock(&c->said_lock);
+		c->said(text, c->data);
+	}
+	if (!over) {
+		return 0;
 	}
 	wl_event_source_remove(c->src);
 	close(c->fd[0]);
 	close(c->fd[1]);
+	pthread_mutex_destroy(&c->said_lock);
 	void (*done)(bool, void *) = c->done;
 	void *d = c->data;
 	bool ok = c->ok;
@@ -116,7 +205,8 @@ static int check_landed(int fd, uint32_t mask, void *data)
 }
 
 bool desk_lock_check(struct wl_event_loop *loop, const char *password,
-	void (*done)(bool ok, void *data), void *data)
+	void (*done)(bool ok, void *data), void (*said)(const char *text, void *data),
+	void *data)
 {
 	struct check *c = calloc(1, sizeof *c);
 	if (!c) {
@@ -130,9 +220,13 @@ bool desk_lock_check(struct wl_event_loop *loop, const char *password,
 		snprintf(c->confdir, sizeof c->confdir, "%s", dir);
 	}
 	c->done = done;
+	c->said = said;
 	c->data = data;
-	if (pipe2(c->fd, O_CLOEXEC) != 0) {
+	pthread_mutex_init(&c->said_lock, NULL);
+	/* not blocking: the loop reads until there is nothing more */
+	if (pipe2(c->fd, O_CLOEXEC | O_NONBLOCK) != 0) {
 		explicit_bzero(c->pass, sizeof c->pass);
+		pthread_mutex_destroy(&c->said_lock);
 		free(c);
 		return false;
 	}
@@ -145,6 +239,7 @@ bool desk_lock_check(struct wl_event_loop *loop, const char *password,
 		close(c->fd[0]);
 		close(c->fd[1]);
 		explicit_bzero(c->pass, sizeof c->pass);
+		pthread_mutex_destroy(&c->said_lock);
 		free(c);
 		return false;
 	}

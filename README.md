@@ -338,8 +338,10 @@ keeps its look.
 
 When something on the desk gets stuck: Ctrl+Alt+Del twice puts everything
 of the desk's own away and draws it all again (the windows stay as they are);
-three times logs out. `desk-ctl reset` and `desk-ctl logout` do the same from
-a terminal or another VT.
+three times logs out -- except at the locked front door, where three times
+does what twice does, so that nobody at a locked desk can end your session
+and lose your unsaved work. `desk-ctl reset` and `desk-ctl logout` do the same
+from a terminal or another VT.
 
 ### The DEsk Experience Index
 

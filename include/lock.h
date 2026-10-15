@@ -18,10 +18,15 @@ cairo_surface_t *desk_lock_picture(void);
 
 /* Check a password, on a thread of its own (PAM can take seconds, and
  * takes them on purpose when it is wrong): done(ok, data) is called on the
- * compositor's loop when it is decided. The password is copied and the
- * copy wiped. False if it could not even be started. */
+ * compositor's loop when it is decided. What PAM says on the way -- the
+ * account locked after too many tries (pam_faillock), a finger wanted on
+ * the reader (pam_fprintd) -- goes to said(text, data) as it comes, also
+ * on the loop: its last two lines, joined by '\n'. said may be NULL. The
+ * password is copied and the copy wiped. False if it could not even be
+ * started. */
 bool desk_lock_check(struct wl_event_loop *loop, const char *password,
-	void (*done)(bool ok, void *data), void *data);
+	void (*done)(bool ok, void *data), void (*said)(const char *text, void *data),
+	void *data);
 
 /* logind, for a desk that is the session: told to lock (loginctl
  * lock-session, the machine about to sleep) and to unlock (loginctl

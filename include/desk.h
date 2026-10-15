@@ -981,6 +981,9 @@ struct desk_lock_look {
 	cairo_surface_t *picture;
 	int typed;
 	bool caret, checking, caps;
+	/* what the password check said (PAM), up to two lines joined by '\n';
+	 * NULL for nothing */
+	const char *said;
 	double fail, back, lean, turn, open, push;
 	double steady;      /* 0: the head bobs as it walks; 1: not at all */
 	cairo_surface_t *inside;

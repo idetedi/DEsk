@@ -21,7 +21,10 @@ unset WAYLAND_DISPLAY DISPLAY
 # A sanitizer's report ends the program with 99, which no program here
 # uses. cairo keeps every face it was asked for by name until it is
 # unloaded: that is cairo's cache, not a leak of the desk's (lsan.supp).
-export ASAN_OPTIONS="exitcode=99:detect_leaks=1:abort_on_error=0"
+# The slow unwinder, because the fast one stops at the first library built
+# without frame pointers (Debian's fontconfig), and a suppression cannot
+# match a frame it never sees.
+export ASAN_OPTIONS="exitcode=99:detect_leaks=1:abort_on_error=0:fast_unwind_on_malloc=0"
 export UBSAN_OPTIONS="halt_on_error=1:print_stacktrace=1:exitcode=99"
 export LSAN_OPTIONS="suppressions=$here/lsan.supp:print_suppressions=0"
 

@@ -1,5 +1,5 @@
 8f56e4ad837b4931a888cfbef8c6fb7641ca8f37c450501ee6657be2d91a3777  ./.dockerignore
-b4327068da90787a16f284e7e6015b13f8bf58338f4db00b4ae40e97661344c7  ./.github/workflows/ci.yml
+011d1cbba478efec899607922053bb2855f3ec7ca36b0f32c38548e134482945  ./.github/workflows/ci.yml
 f23feed53be20d224688cb6cbd0a1e7ae0f68f9254ab74bf78d420b2825b71e7  ./.gitignore
 9ca2f8afe06176db8b331513b4c67681c6923b3414e194fe6ef66eb8c8fa6e44  ./Dockerfile
 87dd199cc6c7a1fd1fefb42f86d924b11a053ef5444dfd5cbf479dd22d6dbc15  ./LICENSE
@@ -50,7 +50,7 @@ d71a97f44854ceed9b3c1c68506b083ce22099977388599e1eabaed37002deed  ./meson_option
 65b0f82a6cf129bf1a1c31a2428795abd33886c15ddd5f3ad97e5922d7bdc3a7  ./protocols/wlr-output-management-unstable-v1.xml
 7ebd98f3449d246a57829e4b4dd9fbc3ef98e3dd42fa94ea102f14f490eb20de  ./protocols/wlr-output-power-management-unstable-v1.xml
 84d400c18f7f7804c3a979de2c72b1bdee26da5067add45d2aba79bda16f1be0  ./scripts/check-words.py
-05df0d3ea22dd557207fd7824a8e788150d6f14464ad7565231132f95f5198e7  ./scripts/ci-smoke.sh
+c6915cab6960e7b2e13c0c4fe418cfc88e3f9c6a72b463b2202b4a5eb7a6625a  ./scripts/ci-smoke.sh
 d45b7f3fb8115abeee25582d8d5ae20c0c48fcc826ca10fc533eec8583a6d5e4  ./scripts/desk-ctl
 90377c4fcb5b4869260ba474570c79c228fdd29f6a9887e5312d700f54d9089b  ./scripts/desk-report
 075de08ad330e4b5ebc6b409a165efe28c83d2d95e9fc5da50793e0e69d5965a  ./scripts/desk-screenshot

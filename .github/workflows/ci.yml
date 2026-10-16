@@ -24,7 +24,7 @@ jobs:
     name: SHA256SUMS
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Every tracked file listed, and each as listed
         run: |
           git ls-files | grep -vx SHA256SUMS | sed 's|^|./|' | sort > "$RUNNER_TEMP/tracked"
@@ -39,7 +39,7 @@ jobs:
     name: Shell scripts (dash -n)
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Parse every shell script with dash
         run: |
           failed=0
@@ -78,7 +78,7 @@ jobs:
             libinput-dev libcairo2-dev libpixman-1-dev libfontconfig-dev libdrm-dev \
             libegl-dev libgles-dev libgbm-dev libsystemd-dev libpulse-dev libpam0g-dev \
             libxcb1-dev libxcb-icccm4-dev libxcb-ewmh-dev
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Configure
         run: meson setup build ${{ matrix.options }}
       - name: Build

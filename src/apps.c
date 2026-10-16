@@ -19,6 +19,7 @@
 #include <locale.h>
 #include <pthread.h>
 #include <signal.h>
+#include <stdatomic.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -477,23 +478,64 @@ static int cache_dir(char *buf, size_t n)
 	return 1;
 }
 
-static int g_have_magick = -1;
+static bool png_signed(const char *path)
+{
+	FILE *f = fopen(path, "rbe");
+	if (!f) {
+		return false;
+	}
+	unsigned char sig[8] = { 0 };
+	size_t n = fread(sig, 1, sizeof sig, f);
+	fclose(f);
+	static const unsigned char PNG[8] = { 0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n' };
+	return n == 8 && !memcmp(sig, PNG, 8);
+}
 
 /* Half the icon themes on a modern machine are SVG only and cairo cannot
  * read SVG. Rather than take a new library dependency for a picture printed
  * at 40 pixels, rasterise once with whatever is already installed and keep
- * the PNG. If nothing is installed the sheet gets its printed initial. */
-static bool raster_svg(const char *svg, const char *png)
+ * the PNG. If nothing is installed the sheet gets its printed initial.
+ *
+ * The pictures are anybody's -- a theme in ~/.local/share/icons, a program's
+ * own -- and ImageMagick, left to itself, goes by what a file holds rather
+ * than its name: a ".svg" that is really one of its scripts (MSL, MVG) would
+ * be run, and those can read and write files. So the format is named on both
+ * sides, "svg:" in and "png:" out. And the PNG is written under a name of its
+ * own and renamed into place, so that a desk stopped half way, or two jobs on
+ * the same picture, never leave half a PNG for the next start to trust. */
+bool desk_svg_to_png(const char *svg, const char *png, int px, int density)
 {
-	if (g_have_magick < 0) {
-		g_have_magick = (access("/usr/bin/magick", X_OK) == 0)
-			|| (access("/usr/bin/convert", X_OK) == 0);
-	}
-	if (!g_have_magick) {
+	const char *tool = access("/usr/bin/magick", X_OK) == 0 ? "/usr/bin/magick"
+		: access("/usr/bin/convert", X_OK) == 0 ? "/usr/bin/convert" : NULL;
+	if (!tool) {
 		return false;
 	}
-	char geom[32];
-	snprintf(geom, sizeof geom, "%dx%d", DESK_APP_ICON_PX, DESK_APP_ICON_PX);
+	static atomic_uint seq;
+	char in[1100], tmp[1100], out[1100], geom[32], dens[16];
+	if ((size_t)snprintf(in, sizeof in, "svg:%s", svg) >= sizeof in
+		|| (size_t)snprintf(tmp, sizeof tmp, "%s.%ld-%u.tmp", png, (long)getpid(),
+			atomic_fetch_add(&seq, 1u)) >= sizeof tmp
+		|| (size_t)snprintf(out, sizeof out, "png:%s", tmp) >= sizeof out) {
+		return false;
+	}
+	snprintf(geom, sizeof geom, "%dx%d", px, px);
+	snprintf(dens, sizeof dens, "%d", density);
+	/* made before the fork: the child of a process with threads may only
+	 * do what is safe in a signal handler until it execs */
+	const char *argv[12];
+	int a = 0;
+	argv[a++] = tool;
+	argv[a++] = "-background";
+	argv[a++] = "none";
+	if (density > 0) {
+		argv[a++] = "-density";
+		argv[a++] = dens;
+	}
+	argv[a++] = in;
+	argv[a++] = "-resize";
+	argv[a++] = geom;
+	argv[a++] = out;
+	argv[a] = NULL;
 	pid_t pid = fork();
 	if (pid < 0) {
 		return false;
@@ -505,19 +547,23 @@ static bool raster_svg(const char *svg, const char *png)
 			dup2(null, 2);
 			close(null);
 		}
-		if (access("/usr/bin/magick", X_OK) == 0) {
-			execl("/usr/bin/magick", "magick", "-background", "none",
-				svg, "-resize", geom, png, (char *)NULL);
-		}
-		execl("/usr/bin/convert", "convert", "-background", "none",
-			svg, "-resize", geom, png, (char *)NULL);
+		execv(tool, (char *const *)argv);
 		_exit(127);
 	}
 	int st = 0;
 	while (waitpid(pid, &st, 0) < 0 && errno == EINTR) {
 		;
 	}
-	return file_ok(png);
+	if (WIFEXITED(st) && WEXITSTATUS(st) == 0 && png_signed(tmp) && rename(tmp, png) == 0) {
+		return true;
+	}
+	unlink(tmp);
+	return false;
+}
+
+static bool raster_svg(const char *svg, const char *png)
+{
+	return desk_svg_to_png(svg, png, DESK_APP_ICON_PX, 0);
 }
 
 static const char *ICON_ROOTS[] = {

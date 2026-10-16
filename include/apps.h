@@ -151,5 +151,10 @@ cairo_surface_t *desk_app_icon(const struct desk_app *app);
  * the item's own directory first -- or false. May start a process to turn
  * an SVG into a PNG, the first time: not for the compositor's thread. */
 bool desk_icon_path(const char *name, const char *extra_dir, char *out, size_t n);
+/* An SVG into a PNG px pixels square, read at density dots an inch (0 for
+ * ImageMagick's own), with whatever ImageMagick is installed; the PNG is
+ * put in place whole or not at all. Starts a process and waits for it: not
+ * for the compositor's thread. */
+bool desk_svg_to_png(const char *svg, const char *png, int px, int density);
 
 #endif

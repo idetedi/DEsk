@@ -2,15 +2,13 @@
  * lock shows. In the drawing library, so that the preview can show it too. */
 
 #include "lock.h"
+#include "apps.h"
 
-#include <errno.h>
-#include <fcntl.h>
 #include <pwd.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
-#include <sys/wait.h>
 #include <unistd.h>
 
 void desk_lock_user(char *login, size_t nl, char *name, size_t nn)
@@ -56,38 +54,6 @@ static bool is_svg(const char *path)
 	return strstr(head, "<svg") != NULL;
 }
 
-/* an SVG into a PNG this size, with whatever is installed (as icons are) */
-static bool raster(const char *svg, const char *png, int px)
-{
-	const char *tool = access("/usr/bin/magick", X_OK) == 0 ? "/usr/bin/magick"
-		: access("/usr/bin/convert", X_OK) == 0 ? "/usr/bin/convert" : NULL;
-	if (!tool) {
-		return false;
-	}
-	char geom[32];
-	snprintf(geom, sizeof geom, "%dx%d", px, px);
-	pid_t pid = fork();
-	if (pid < 0) {
-		return false;
-	}
-	if (pid == 0) {
-		int null = open("/dev/null", O_WRONLY);
-		if (null >= 0) {
-			dup2(null, 1);
-			dup2(null, 2);
-			close(null);
-		}
-		execl(tool, tool, "-background", "none", "-density", "192", svg, "-resize", geom, png,
-			(char *)NULL);
-		_exit(127);
-	}
-	int st = 0;
-	while (waitpid(pid, &st, 0) < 0 && errno == EINTR) {
-		;
-	}
-	return WIFEXITED(st) && WEXITSTATUS(st) == 0 && is_png(png);
-}
-
 cairo_surface_t *desk_lock_picture(void)
 {
 	char path[1024], png[1024];
@@ -121,7 +87,7 @@ cairo_surface_t *desk_lock_picture(void)
 			}
 			mkdir(dir, 0755);
 			if ((size_t)snprintf(png, sizeof png, "%s/face.png", dir) >= sizeof png
-				|| !raster(path, png, 384)) {
+				|| !desk_svg_to_png(path, png, 384, 192)) {
 				continue;
 			}
 			snprintf(path, sizeof path, "%s", png);

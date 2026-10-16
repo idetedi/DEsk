@@ -108,6 +108,14 @@ static void check_said(struct check *c, const char *msg)
 	check_tell(c, CHECK_SAID);
 }
 
+/* The door has one line to type into, so every hidden prompt is answered
+ * with what was typed there: a stack that asks twice (pam_unix and pam_sss
+ * without use_first_pass) wants the same password both times. A prompt
+ * whose answer is shown as it is typed is never given it -- it asks for
+ * something else (a one-time code, Enter to go on with a security key), and
+ * a module may print or log what it is given there. It is answered with
+ * nothing, and what it asked is put under the plate, so that a door that
+ * will not open says why. Every prompt is in the log; no answer ever is. */
 static int conv(int n, const struct pam_message **msg, struct pam_response **resp, void *data)
 {
 	struct check *c = data;
@@ -118,9 +126,18 @@ static int conv(int n, const struct pam_message **msg, struct pam_response **res
 	for (int i = 0; i < n; i++) {
 		int style = msg[i]->msg_style;
 		if (style == PAM_PROMPT_ECHO_OFF || style == PAM_PROMPT_ECHO_ON) {
-			r[i].resp = strdup(c->pass);
+			bool shown = style == PAM_PROMPT_ECHO_ON;
+			wlr_log(WLR_INFO, "lock: PAM asks%s: %s", shown ? " (shown as typed)" : "",
+				msg[i]->msg ? msg[i]->msg : "");
+			if (shown) {
+				check_said(c, msg[i]->msg);
+			}
+			r[i].resp = strdup(shown ? "" : c->pass);
 			if (!r[i].resp) {
 				for (int k = 0; k < i; k++) {
+					if (r[k].resp) {
+						explicit_bzero(r[k].resp, strlen(r[k].resp));
+					}
 					free(r[k].resp);
 				}
 				free(r);

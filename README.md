@@ -483,7 +483,7 @@ desk-report
 
 It gathers DEsk's version, your Linux, your graphics card and driver, the
 last session's log and whether DEsk crashed, with your user name, home
-folder, machine name and network addresses taken out. Read it through before
+folder, machine name, network addresses and birthday taken out. Read it through before
 sending it. Say too what you did and what happened.
 
 Without it (an older DEsk, or one not installed), attach by hand:

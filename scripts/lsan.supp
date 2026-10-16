@@ -4,3 +4,7 @@
 # cairo's toy font faces (cairo_select_font_face) are cached by cairo, with
 # the fontconfig patterns they hold, until the library is unloaded.
 leak:cairo_toy_font_face_create
+# fontconfig's own configuration, loaded once by FcInit (fonts.c, chosen)
+# and kept for the life of the process: freed only by FcFini, which nothing
+# may call while another thread could still ask fontconfig anything.
+leak:FcInitLoadConfigAndFonts

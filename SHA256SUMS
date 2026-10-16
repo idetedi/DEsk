@@ -65,7 +65,7 @@ f497730ae4f3845d5f2d4af8f7752cd6cd93be9f280541649ecac5aa7e3cfcc5  ./scripts/inst
 2585b315141818200299710bf7c8dc381d4d7b26b49547c40bbc751496ae24f2  ./scripts/install_fedora.sh
 88d207cb26e99df2efa67ea71dd3e8f9908bbfa350bf689ef2ff84326f2798dc  ./scripts/install_session.sh
 b67e05be75031e67357256792d9e6cbd6dd653330394ae9c29d2fcf72fc11a7e  ./scripts/install_ubuntu.sh
-806e6eb166b689316292556c2fdf5194840d06916caceb0a4a9ac321c3a86409  ./scripts/lsan.supp
+3342c7dc51da8eab26f58b80f933093f0d8ab8e166859b64498c279e4855375f  ./scripts/lsan.supp
 b6164325cec6f7b2a2328c01ad0daade3d6a3ed26de3eca51007dd2b86028442  ./scripts/room-key.py
 950590bbb80842a602afe00517244207bb7db4b078dd98b6220239e85b07c556  ./scripts/verify.sh
 efb1e1e656adf893543970a70e1417942f5df28b7f134a60d022e9291ea7ab8d  ./session/autostart/desk-ime.desktop

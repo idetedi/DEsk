@@ -398,6 +398,14 @@ For v0.1 the following were run:
 `scripts/verify.sh` builds the Debian 13 image in the `Dockerfile` and runs
 DEsk in it headless.
 
+On every push and pull request, `.github/workflows/ci.yml` checks that
+`SHA256SUMS` lists exactly the tracked files as they are, parses the shell
+scripts with dash, and builds on Debian 13 three ways (release with
+`-Dwerror=true`; minimal; AddressSanitizer + UndefinedBehaviorSanitizer),
+with `meson test` in each; the sanitized programs are then run without a
+screen by `scripts/ci-smoke.sh` (the calendar, memo pad and notes in every
+language, the sounds, the shelves, `desk-settings --check`).
+
 ## 10. What is stable
 
 v0.1 has **no plugin API**. Everything in `include/` is internal and may

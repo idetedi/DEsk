@@ -1,4 +1,5 @@
 8f56e4ad837b4931a888cfbef8c6fb7641ca8f37c450501ee6657be2d91a3777  ./.dockerignore
+b4327068da90787a16f284e7e6015b13f8bf58338f4db00b4ae40e97661344c7  ./.github/workflows/ci.yml
 f23feed53be20d224688cb6cbd0a1e7ae0f68f9254ab74bf78d420b2825b71e7  ./.gitignore
 9ca2f8afe06176db8b331513b4c67681c6923b3414e194fe6ef66eb8c8fa6e44  ./Dockerfile
 87dd199cc6c7a1fd1fefb42f86d924b11a053ef5444dfd5cbf479dd22d6dbc15  ./LICENSE
@@ -7,8 +8,8 @@ e0c84528fe78253ba3fda523a110dc5fbd42c960c42cffc58e80b3dd7a340c31  ./README.md
 5069f815ca7acaf4062128f2660e236292a81cd5f3620eb2a037664d9360222b  ./RELEASE-NOTES.ja.md
 e7aa1e9b2a6533e4f6a623ea78ce8df96354867173775c7bd8f19fcd4346e0a7  ./RELEASE-NOTES.md
 95ec560c0517006961566f73ef2ae19b8f3dbe8b70b90366f0b908599957e49b  ./applications/meson.build
-eca09805725a6a0662529877f07bf6c66a88d1457099685da043985b1ce8dbdf  ./docs/ARCHITECTURE.ja.md
-9b6d6497575952487a4003d0cd0fb182e0bcc58ad566cc192e1afa5711ef3b4c  ./docs/ARCHITECTURE.md
+c2563c21d55ece633eb982b6a31962465a8fa07762c2825d09524aa98d489270  ./docs/ARCHITECTURE.ja.md
+9379debf6ccc4e045c822273642834dede54d70d8a0a6be4cdee56baccd5e423  ./docs/ARCHITECTURE.md
 1393d89f7d8ec3861d9e98e34ba0a51da448fe29bdfaaf18856ae0b47b13e31b  ./docs/CONFIGURATION.md
 8451728b01a2963a21ab43a343adc6349476e848329add3d1c7256d73329b53b  ./docs/MODDING.ja.md
 f13659ce393144c586bddc12270bb46417f99386c9083ccc6993d694b5e599e1  ./docs/MODDING.md
@@ -49,6 +50,7 @@ d71a97f44854ceed9b3c1c68506b083ce22099977388599e1eabaed37002deed  ./meson_option
 65b0f82a6cf129bf1a1c31a2428795abd33886c15ddd5f3ad97e5922d7bdc3a7  ./protocols/wlr-output-management-unstable-v1.xml
 7ebd98f3449d246a57829e4b4dd9fbc3ef98e3dd42fa94ea102f14f490eb20de  ./protocols/wlr-output-power-management-unstable-v1.xml
 84d400c18f7f7804c3a979de2c72b1bdee26da5067add45d2aba79bda16f1be0  ./scripts/check-words.py
+05df0d3ea22dd557207fd7824a8e788150d6f14464ad7565231132f95f5198e7  ./scripts/ci-smoke.sh
 d45b7f3fb8115abeee25582d8d5ae20c0c48fcc826ca10fc533eec8583a6d5e4  ./scripts/desk-ctl
 90377c4fcb5b4869260ba474570c79c228fdd29f6a9887e5312d700f54d9089b  ./scripts/desk-report
 075de08ad330e4b5ebc6b409a165efe28c83d2d95e9fc5da50793e0e69d5965a  ./scripts/desk-screenshot
@@ -63,6 +65,7 @@ f497730ae4f3845d5f2d4af8f7752cd6cd93be9f280541649ecac5aa7e3cfcc5  ./scripts/inst
 2585b315141818200299710bf7c8dc381d4d7b26b49547c40bbc751496ae24f2  ./scripts/install_fedora.sh
 88d207cb26e99df2efa67ea71dd3e8f9908bbfa350bf689ef2ff84326f2798dc  ./scripts/install_session.sh
 b67e05be75031e67357256792d9e6cbd6dd653330394ae9c29d2fcf72fc11a7e  ./scripts/install_ubuntu.sh
+806e6eb166b689316292556c2fdf5194840d06916caceb0a4a9ac321c3a86409  ./scripts/lsan.supp
 b6164325cec6f7b2a2328c01ad0daade3d6a3ed26de3eca51007dd2b86028442  ./scripts/room-key.py
 950590bbb80842a602afe00517244207bb7db4b078dd98b6220239e85b07c556  ./scripts/verify.sh
 efb1e1e656adf893543970a70e1417942f5df28b7f134a60d022e9291ea7ab8d  ./session/autostart/desk-ime.desktop

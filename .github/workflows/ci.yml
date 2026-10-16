@@ -1,0 +1,90 @@
+# DEsk built and checked on every push and pull request.
+#
+# - SHA256SUMS lists exactly the tracked files, each as it is: the
+#   installers refuse a copy that does not match it, so a change that forgot
+#   to update it would break every install of that copy.
+# - The shell scripts parse under dash, the /bin/sh of Debian and Ubuntu.
+# - Built on Debian 13 (which has wlroots 0.18), three ways: a release with
+#   every warning an error; with nothing optional (no post box, no sound,
+#   no Xwayland); and with AddressSanitizer and UndefinedBehaviorSanitizer,
+#   whose programs are then run without a screen (scripts/ci-smoke.sh).
+#   meson test, the word tables' check, in each.
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  sums:
+    name: SHA256SUMS
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Every tracked file listed, and each as listed
+        run: |
+          git ls-files | grep -vx SHA256SUMS | sed 's|^|./|' | sort > "$RUNNER_TEMP/tracked"
+          awk '{ print $2 }' SHA256SUMS | sort > "$RUNNER_TEMP/listed"
+          if ! diff -u "$RUNNER_TEMP/listed" "$RUNNER_TEMP/tracked"; then
+            echo "::error::SHA256SUMS does not list exactly the tracked files (- listed only, + tracked only)"
+            exit 1
+          fi
+          sha256sum --quiet -c SHA256SUMS
+
+  scripts:
+    name: Shell scripts (dash -n)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Parse every shell script with dash
+        run: |
+          failed=0
+          for f in $(grep -lr '^#!/bin/sh' scripts session); do
+            dash -n "$f" || { echo "::error file=$f::does not parse under dash"; failed=1; }
+          done
+          exit $failed
+
+  build:
+    name: Debian 13, ${{ matrix.name }}
+    runs-on: ubuntu-24.04
+    container:
+      image: debian:trixie
+      # LeakSanitizer stops the program's threads to look at them
+      options: --cap-add=SYS_PTRACE
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: release -Werror
+            options: -Dbuildtype=release -Dwerror=true
+          - name: minimal
+            options: -Dpost=disabled -Dsound=disabled -Dxwayland=disabled -Dwerror=true
+          - name: ASan + UBSan
+            options: -Db_sanitize=address,undefined -Dwerror=true
+            smoke: true
+    steps:
+      - name: What DEsk builds with (install_debian.sh's build list)
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          apt-get update -qq
+          apt-get install -y -qq --no-install-recommends \
+            ca-certificates git gcc libc6-dev meson ninja-build pkg-config python3 \
+            libwlroots-0.18-dev libwayland-dev wayland-protocols libxkbcommon-dev \
+            libinput-dev libcairo2-dev libpixman-1-dev libfontconfig-dev libdrm-dev \
+            libegl-dev libgles-dev libgbm-dev libsystemd-dev libpulse-dev libpam0g-dev \
+            libxcb1-dev libxcb-icccm4-dev libxcb-ewmh-dev
+      - uses: actions/checkout@v4
+      - name: Configure
+        run: meson setup build ${{ matrix.options }}
+      - name: Build
+        run: meson compile -C build
+      - name: meson test
+        run: meson test -C build --print-errorlogs
+      - name: Run without a screen (scripts/ci-smoke.sh)
+        if: ${{ matrix.smoke }}
+        run: sh scripts/ci-smoke.sh build

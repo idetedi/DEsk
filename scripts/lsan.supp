@@ -1,0 +1,6 @@
+# LeakSanitizer suppressions for scripts/ci-smoke.sh. Only what is not
+# DEsk's to free.
+#
+# cairo's toy font faces (cairo_select_font_face) are cached by cairo, with
+# the fontconfig patterns they hold, until the library is unloaded.
+leak:cairo_toy_font_face_create

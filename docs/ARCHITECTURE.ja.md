@@ -243,6 +243,8 @@ v0.1 では次を行いました。
 
 `scripts/verify.sh` は `Dockerfile` の Debian 13 のイメージを作り、その中で DEsk をヘッドレスで動かします。
 
+push と pull request のたびに `.github/workflows/ci.yml` が、`SHA256SUMS` が追跡しているファイルをちょうどそのまま並べているか確かめ、シェルスクリプトを dash で読み、Debian 13 で 3 通り（`-Dwerror=true` のリリース、最小構成、AddressSanitizer + UndefinedBehaviorSanitizer）にビルドしてそれぞれ `meson test` を走らせます。サニタイザー付きのプログラムは `scripts/ci-smoke.sh` が画面なしで動かします（カレンダー、メモ帳、付箋を全言語で、音、本棚、`desk-settings --check`）。
+
 ## 10. 何が安定か
 
 v0.1 には **プラグインの API はありません**。`include/` のものはすべて内部用で、リリースの間に変わることがあります。安定しているのは DEsk が実装している標準のインターフェースです：Wayland のプロトコル（§4.7）、freedesktop.org の通知、StatusNotifierItem、MPRIS、XDG の autostart と `.desktop` ファイル、そして §7 のファイル（v0.1 はそのキーを読み続けることを約束します）。DEsk そのものを変えるにはソースを変えます。その方法は [MODDING.ja.md](MODDING.ja.md) にあります。

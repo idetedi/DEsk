@@ -47,7 +47,7 @@ One `key = value` per line; `#` starts a comment.
 
 | Key | Values | Default | |
 | --- | --- | --- | --- |
-| `scale` | `auto`, a number from `0.5` to `4`, or a percentage (`125%`) | `auto` | Pixels per point. `auto` follows the screen's density. |
+| `scale` | `auto`, a number from `0.5` to `4`, or a percentage (`125%`) | `auto` | Pixels per point. `auto` follows the screen's density. Above 1, programs are told too, at the start of a session: Qt's are scaled whole (`QT_SCALE_FACTOR`, unless it is set), and GTK's text (`text-scaling-factor` in DEsk's own layer of settings, unless the user set one). |
 | `graphics` | `ultra`, `high`, `medium`, `low`, `2d` | `high` (`2d` when the screen is drawn on the CPU) | How much is drawn. |
 | `motion` | `brisk`, `normal`, `gentle` | `normal` | How long movements take. |
 | `camera_bounce` | `normal`, `low`, `off` | `normal` | How far the view swings past and settles. |

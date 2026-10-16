@@ -110,8 +110,11 @@ disk afterwards.
   pointer-constraints and relative-pointer (pointer capture in games and
   virtual machines), fractional-scale.
 - **High-density screens**: DEsk sizes its own things in points, but does
-  not yet tell programs a scale, so their windows come out small on a HiDPI
-  screen.
+  not yet tell programs a scale through Wayland, so their windows come out
+  small on a HiDPI screen. What can be done from outside them is: Qt
+  programs are scaled whole (`QT_SCALE_FACTOR`), and GTK programs' text
+  (GTK 3 and 4, Firefox) is made bigger; their icons and pictures are not.
+  The pointer keeps its size.
 - **More than one screen**: screens other than the desk's show a plain desk
   for windows; the bookcase, Control Panel and post box are on the desk's
   screen only.

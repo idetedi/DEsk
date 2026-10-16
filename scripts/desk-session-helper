@@ -14,6 +14,9 @@
 #   media     memory sticks and disks: mounted when put in, a letter saying
 #             so, and a slip in the tray while there is one to take out
 #   power     a letter when the battery runs low
+#   scale S   programs' text as big as the desk's own things, S pixels to a
+#             point (DEsk, at the start of its session): GTK's text scale in
+#             DEsk's own layer of settings, never over one the user set
 #   end NAME  the session is over (desk-session, once DEsk has gone): what it
 #             told systemd is taken back, and the portals it started stopped,
 #             while systemd's XDG_CURRENT_DESKTOP is still NAME (DEsk)
@@ -78,7 +81,7 @@ end)
 		XDG_CURRENT_DESKTOP XDG_SESSION_TYPE XDG_SESSION_DESKTOP DESKTOP_SESSION \
 		QT_QPA_PLATFORM QT_QPA_PLATFORMTHEME GDK_BACKEND MOZ_ENABLE_WAYLAND \
 		GTK_IM_MODULE QT_IM_MODULE QT_IM_MODULES XMODIFIERS DESK_IM \
-		XCURSOR_THEME XCURSOR_SIZE DCONF_PROFILE >/dev/null 2>&1 || true
+		XCURSOR_THEME XCURSOR_SIZE DCONF_PROFILE QT_SCALE_FACTOR >/dev/null 2>&1 || true
 	echo "desk-session-helper: the session's environment and portals taken back"
 	exit 0
 	;;
@@ -162,8 +165,52 @@ power)
 	command -v batsignal >/dev/null 2>&1 || exit 0
 	exec batsignal
 	;;
+scale)
+	# On a screen where a point is more than a pixel the desk draws its own
+	# things bigger, but programs are told no scale, so GTK's text is made
+	# as big through org.gnome.desktop.interface text-scaling-factor, which
+	# GTK 3 and 4 (and Firefox through them) read, and follow as it
+	# changes. Only in DEsk's own layer of settings (desk-dconf-profile,
+	# which desk-session sets): never in the user's, where another desktop
+	# would get it too. A scale someone set -- here or in another desktop --
+	# is theirs, and left; the one given here is noted, so that it can be
+	# changed with the screen, or taken back on an ordinary one.
+	s=${2:-1}
+	case "$s" in
+	''|*[!0-9.]*) echo "desk-session-helper: scale wants a number, not $s" >&2; exit 2 ;;
+	esac
+	case "${DCONF_PROFILE:-}" in
+	'') exit 0 ;;
+	esac
+	grep -qx 'user-db:desk' "$DCONF_PROFILE" 2>/dev/null || exit 0
+	command -v dconf >/dev/null 2>&1 || exit 0
+	key=/org/gnome/desktop/interface/text-scaling-factor
+	given="${XDG_STATE_HOME:-$HOME/.local/state}/desk/text-scale-given"
+	now=$(dconf read "$key" 2>/dev/null)
+	mine=$(cat "$given" 2>/dev/null)
+	if [ -n "$now" ] && [ "$now" != "$mine" ]; then
+		echo "desk-session-helper: GTK's text scale is $now, set by the user: left as it is"
+		exit 0
+	fi
+	# 1 or less: an ordinary screen, and what was given for another taken back
+	if awk -v s="$s" 'BEGIN { exit !(s <= 1.001) }'; then
+		if [ -n "$mine" ]; then
+			dconf reset "$key" 2>/dev/null || true
+			rm -f "$given"
+			echo "desk-session-helper: GTK's text scale taken back (an ordinary screen)"
+		fi
+		exit 0
+	fi
+	# a double, as the key is one ("2" alone would be an integer, and refused)
+	v=$(awk -v s="$s" 'BEGIN { printf "%.2f", s }')
+	dconf write "$key" "$v" || exit 0
+	mkdir -p "$(dirname "$given")"
+	dconf read "$key" > "$given"
+	echo "desk-session-helper: GTK's text scale $v, as the desk's (a point is $s pixels)"
+	exit 0
+	;;
 *)
-	echo "usage: desk-session-helper polkit|keyring|ime|ime-kind|network|media|power" >&2
+	echo "usage: desk-session-helper polkit|keyring|ime|ime-kind|network|media|power|scale S" >&2
 	exit 2
 	;;
 esac

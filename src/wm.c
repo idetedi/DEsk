@@ -20936,6 +20936,36 @@ static void ui_scale_pick(struct desk_server *server, struct wlr_output *out)
 	wlr_log(WLR_INFO, "%s: %dx%d, %dx%d mm: a point is %.2f pixels", out->name,
 		out->width, out->height, out->phys_width, out->phys_height, scale);
 }
+/* On a screen where a point is more than a pixel the desk draws its own
+ * things bigger, but programs are told no scale -- the screen's stays 1,
+ * the desk being drawn in its pixels -- and their windows came out small.
+ * What can be done from outside them: Qt scaled whole (QT_SCALE_FACTOR,
+ * for what the desk starts and, through session.c, what D-Bus does), and
+ * GTK's text (desk-session-helper scale: GTK 3 and 4 and Firefox, through
+ * the desk's own layer of settings). Only in a session of DEsk's, at its
+ * start, and never over what the user set; the helper is told an ordinary
+ * screen too, to take back what it gave for a dense one. */
+static void scale_programs(void)
+{
+	if (!desk_session_is_desktop()) {
+		return;
+	}
+	double s = desk_ui_scale();
+	char v[16];
+	snprintf(v, sizeof v, "%.2f", s);
+	if (s > 1.001) {
+		if (getenv("QT_SCALE_FACTOR")) {
+			wlr_log(WLR_INFO, "programs: QT_SCALE_FACTOR=%s, as it was set",
+				getenv("QT_SCALE_FACTOR"));
+		} else {
+			setenv("QT_SCALE_FACTOR", v, 0);
+			wlr_log(WLR_INFO, "programs: Qt's scaled %s, as the desk's things are", v);
+		}
+	}
+	char *argv[] = { "desk-session-helper", "scale", v, NULL };
+	desk_exec_launch(argv, NULL);
+}
+
 static void server_new_output(struct wl_listener *listener, void *data)
 {
 	struct desk_server *server = wl_container_of(listener, server, new_output);
@@ -22747,6 +22777,9 @@ int main(int argc, char **argv)
 	(void)compositor;
 #endif
 
+	/* programs as big as the desk's things on a dense screen, told before
+	 * any is started */
+	scale_programs();
 	/* the desktop's own business at login, when DEsk is the desktop */
 	desk_session_start(loop);
 	/* and logind's say over the screen lock */

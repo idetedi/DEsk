@@ -158,6 +158,9 @@ static const char *const ACTIVATION_VARS[] = {
 	 * D-Bus starts for the session -- a file manager asked to show a
 	 * folder -- looks as the rest of the session does. */
 	"DCONF_PROFILE",
+	/* Qt's programs as big as the desk's things, on a dense screen
+	 * (wm.c, scale_programs) */
+	"QT_SCALE_FACTOR",
 };
 
 /* What a program must not be told when it is not set here: with IBus,

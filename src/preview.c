@@ -769,6 +769,12 @@ static int write_lock(const char *path, int w, int h)
 int main(int argc, char **argv)
 {
 	desk_compat();
+	/* pixels to a point, as the desk takes them: a dense screen drawn here
+	 * the way it is drawn there */
+	const char *scale = getenv("DESK_SCALE");
+	if (scale && atof(scale) > 0.0) {
+		desk_set_ui_scale(atof(scale));
+	}
 	const char *path = "desk-preview.png";
 	int w = 1600, h = 1000;
 	bool demo = true;

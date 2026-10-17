@@ -2749,6 +2749,21 @@ static void film_ensure(struct desk_server *server, int which,
 	prof_end();
 }
 
+/* A view's traced sheet, put where it belongs in the view's layer: over the
+ * film it fades in on, under what is drawn over it (the console's needles
+ * and lamps, the letters in the post box). A node made goes on top of its
+ * layer, and the sheet is made again whenever its size or the size of a
+ * point changes (desk_relayout) -- which, once the view had been looked
+ * at, put it over the live half and hid every needle and letter. */
+static void view_base_under(struct desk_server *server, int which,
+	struct wlr_scene_buffer *base)
+{
+	wlr_scene_node_lower_to_bottom(&base->node);
+	if (server->film_b[which]) {
+		wlr_scene_node_place_above(&base->node, &server->film_b[which]->node);
+	}
+}
+
 /* One keyframe, laid where it stands in for the view at t. */
 static void film_place(struct desk_server *server, int which,
 	struct wlr_scene_buffer *node, int frame, double t, double opacity)
@@ -7594,6 +7609,7 @@ static void paint_console_body(struct desk_server *server)
 		struct desk_buf *bb = buf_create(w, h);
 		desk_draw_console_base(bb->cr, w, h);
 		scene_put(&server->cc_base, server->layer_console, bb, 0, 0, NULL);
+		view_base_under(server, DESK_VIEW_CONSOLE, server->cc_base);
 		server->cc_base_w = w;
 		server->cc_base_h = h;
 	}
@@ -8398,6 +8414,7 @@ static void paint_post_body(struct desk_server *server)
 		struct desk_buf *bb = buf_create(w, h);
 		desk_draw_post(bb->cr, w, h, NULL, 0, -1, 0.0, 0.0, NULL);
 		scene_put(&server->pb_base, server->layer_post, bb, 0, 0, NULL);
+		view_base_under(server, DESK_VIEW_POST, server->pb_base);
 		server->pb_base_w = w;
 		server->pb_base_h = h;
 	}
@@ -14278,6 +14295,7 @@ static void views_prewarm(struct desk_server *server)
 			struct desk_buf *bb = buf_create(w, h);
 			desk_draw_console_base(bb->cr, w, h);
 			scene_put(&server->cc_base, server->layer_console, bb, 0, 0, NULL);
+			view_base_under(server, DESK_VIEW_CONSOLE, server->cc_base);
 			wlr_scene_node_set_enabled(&server->cc_base->node, false);
 			server->cc_base_w = w;
 			server->cc_base_h = h;
@@ -14291,6 +14309,7 @@ static void views_prewarm(struct desk_server *server)
 			struct desk_buf *bb = buf_create(w, h);
 			desk_draw_post(bb->cr, w, h, NULL, 0, -1, 0.0, 0.0, NULL);
 			scene_put(&server->pb_base, server->layer_post, bb, 0, 0, NULL);
+			view_base_under(server, DESK_VIEW_POST, server->pb_base);
 			wlr_scene_node_set_enabled(&server->pb_base->node, false);
 			server->pb_base_w = w;
 			server->pb_base_h = h;

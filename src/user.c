@@ -54,6 +54,12 @@ static bool is_svg(const char *path)
 	return strstr(head, "<svg") != NULL;
 }
 
+/* an SVG into a PNG this size, with whatever is installed (as icons are) */
+static bool raster(const char *svg, const char *png, int px)
+{
+	return desk_svg_raster(svg, png, px) && is_png(png);
+}
+
 cairo_surface_t *desk_lock_picture(void)
 {
 	char path[1024], png[1024];
@@ -87,7 +93,7 @@ cairo_surface_t *desk_lock_picture(void)
 			}
 			mkdir(dir, 0755);
 			if ((size_t)snprintf(png, sizeof png, "%s/face.png", dir) >= sizeof png
-				|| !desk_svg_to_png(path, png, 384, 192)) {
+				|| !raster(path, png, 384)) {
 				continue;
 			}
 			snprintf(path, sizeof path, "%s", png);

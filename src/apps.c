@@ -493,48 +493,71 @@ static bool png_signed(const char *path)
 
 /* Half the icon themes on a modern machine are SVG only and cairo cannot
  * read SVG. Rather than take a new library dependency for a picture printed
- * at 40 pixels, rasterise once with whatever is already installed and keep
- * the PNG. If nothing is installed the sheet gets its printed initial.
+ * at 40 pixels, rasterise once with whatever is installed -- rsvg-convert,
+ * small and made for it (the installers bring it), else ImageMagick -- and
+ * keep the PNG. If neither is there the sheet gets its printed initial.
  *
  * The pictures are anybody's -- a theme in ~/.local/share/icons, a program's
  * own -- and ImageMagick, left to itself, goes by what a file holds rather
  * than its name: a ".svg" that is really one of its scripts (MSL, MVG) would
  * be run, and those can read and write files. So the format is named on both
- * sides, "svg:" in and "png:" out. And the PNG is written under a name of its
- * own and renamed into place, so that a desk stopped half way, or two jobs on
- * the same picture, never leave half a PNG for the next start to trust. */
-bool desk_svg_to_png(const char *svg, const char *png, int px, int density)
+ * sides, "svg:" in and "png:" out (rsvg-convert reads only SVG, and is told
+ * to write a PNG). And the PNG is written under a name of its own and
+ * renamed into place, so that a desk stopped half way, or two jobs on the
+ * same picture, never leave half a PNG for the next start to trust. */
+bool desk_svg_raster(const char *svg, const char *png, int px)
 {
-	const char *tool = access("/usr/bin/magick", X_OK) == 0 ? "/usr/bin/magick"
-		: access("/usr/bin/convert", X_OK) == 0 ? "/usr/bin/convert" : NULL;
+	static const char *const TOOLS[] = { "/usr/bin/rsvg-convert", "/usr/bin/magick",
+		"/usr/bin/convert" };
+	const char *tool = NULL;
+	for (size_t i = 0; i < sizeof TOOLS / sizeof TOOLS[0] && !tool; i++) {
+		if (access(TOOLS[i], X_OK) == 0) {
+			tool = TOOLS[i];
+		}
+	}
 	if (!tool) {
 		return false;
 	}
 	static atomic_uint seq;
-	char in[1100], tmp[1100], out[1100], geom[32], dens[16];
+	char in[1100], tmp[1100], out[1100], side[16], geom[32];
 	if ((size_t)snprintf(in, sizeof in, "svg:%s", svg) >= sizeof in
 		|| (size_t)snprintf(tmp, sizeof tmp, "%s.%ld-%u.tmp", png, (long)getpid(),
 			atomic_fetch_add(&seq, 1u)) >= sizeof tmp
 		|| (size_t)snprintf(out, sizeof out, "png:%s", tmp) >= sizeof out) {
 		return false;
 	}
+	snprintf(side, sizeof side, "%d", px);
 	snprintf(geom, sizeof geom, "%dx%d", px, px);
-	snprintf(dens, sizeof dens, "%d", density);
 	/* made before the fork: the child of a process with threads may only
 	 * do what is safe in a signal handler until it execs */
 	const char *argv[12];
 	int a = 0;
-	argv[a++] = tool;
-	argv[a++] = "-background";
-	argv[a++] = "none";
-	if (density > 0) {
+	if (tool == TOOLS[0]) {
+		/* drawn at the size it is wanted, square, its own shape kept */
+		argv[a++] = "rsvg-convert";
+		argv[a++] = "-w";
+		argv[a++] = side;
+		argv[a++] = "-h";
+		argv[a++] = side;
+		argv[a++] = "-a";
+		argv[a++] = "-f";
+		argv[a++] = "png";
+		argv[a++] = "-o";
+		argv[a++] = tmp;
+		argv[a++] = svg;
+	} else {
+		/* (read at twice the size, so a small picture is drawn from
+		 * enough of it) */
+		argv[a++] = tool;
+		argv[a++] = "-background";
+		argv[a++] = "none";
 		argv[a++] = "-density";
-		argv[a++] = dens;
+		argv[a++] = "192";
+		argv[a++] = in;
+		argv[a++] = "-resize";
+		argv[a++] = geom;
+		argv[a++] = out;
 	}
-	argv[a++] = in;
-	argv[a++] = "-resize";
-	argv[a++] = geom;
-	argv[a++] = out;
 	argv[a] = NULL;
 	pid_t pid = fork();
 	if (pid < 0) {
@@ -563,7 +586,7 @@ bool desk_svg_to_png(const char *svg, const char *png, int px, int density)
 
 static bool raster_svg(const char *svg, const char *png)
 {
-	return desk_svg_to_png(svg, png, DESK_APP_ICON_PX, 0);
+	return desk_svg_raster(svg, png, DESK_APP_ICON_PX);
 }
 
 static const char *ICON_ROOTS[] = {
@@ -1718,6 +1741,59 @@ static bool same_word(const char *a, const char *b)
 	return a && b && *a && *b && strcasecmp(a, b) == 0;
 }
 
+/* The endings of scripts' files. GTK names a window after the program it
+ * is, and for a script that is the script's file: Mint's Software Manager
+ * is mintinstall.py. */
+static const char *const SCRIPT_ENDS[] = { "py", "pyw", "pl", "rb", "sh", "js", "lua", "tcl",
+	"jar" };
+
+bool desk_app_script_stem(const char *name, char *out, size_t n)
+{
+	const char *dot = name ? strrchr(name, '.') : NULL;
+	if (!dot || dot == name || n == 0) {
+		return false;
+	}
+	for (size_t i = 0; i < sizeof SCRIPT_ENDS / sizeof SCRIPT_ENDS[0]; i++) {
+		if (strcasecmp(dot + 1, SCRIPT_ENDS[i]) == 0) {
+			size_t len = (size_t)(dot - name);
+			if (len >= n) {
+				len = n - 1;
+			}
+			memcpy(out, name, len);
+			out[len] = '\0';
+			return true;
+		}
+	}
+	return false;
+}
+
+/* The programs that run scripts: a window that calls itself python3 says
+ * nothing of which program it is. */
+static const char *const INTERPRETERS[] = { "python", "perl", "ruby", "node", "nodejs", "sh",
+	"bash", "lua", "wish", "tclsh", "java", "gjs" };
+
+bool desk_app_is_interpreter(const char *name)
+{
+	if (!name || !*name) {
+		return false;
+	}
+	for (size_t i = 0; i < sizeof INTERPRETERS / sizeof INTERPRETERS[0]; i++) {
+		size_t l = strlen(INTERPRETERS[i]);
+		if (strncasecmp(name, INTERPRETERS[i], l) != 0) {
+			continue;
+		}
+		/* python3, python3.13, lua5.4 */
+		const char *p = name + l;
+		while (*p && (isdigit((unsigned char)*p) || *p == '.')) {
+			p++;
+		}
+		if (!*p) {
+			return true;
+		}
+	}
+	return false;
+}
+
 /* The program an Exec line runs, without its path or arguments. */
 static void exec_prog(const char *exec, char *out, size_t n)
 {
@@ -1742,22 +1818,41 @@ static void exec_prog(const char *exec, char *out, size_t n)
 			}
 		}
 	}
-	const char *end = p;
-	while (*end && *end != ' ') {
-		end++;
-	}
-	const char *base = p;
-	for (const char *q = p; q < end; q++) {
-		if (*q == '/') {
-			base = q + 1;
+	/* python3 -O /usr/lib/thing/thing.py runs thing: past the
+	 * interpreter and its options, the script */
+	for (bool past = false;; past = true) {
+		while (*p == ' ') {
+			p++;
 		}
+		const char *end = p;
+		while (*end && *end != ' ') {
+			end++;
+		}
+		if (past && *p == '-' && *end) {
+			p = end;
+			continue;
+		}
+		const char *base = p;
+		for (const char *q = p; q < end; q++) {
+			if (*q == '/') {
+				base = q + 1;
+			}
+		}
+		size_t len = (size_t)(end - base);
+		if (len >= n) {
+			len = n - 1;
+		}
+		memcpy(out, base, len);
+		out[len] = '\0';
+		if (past || !desk_app_is_interpreter(out) || !*end) {
+			break;
+		}
+		p = end;
 	}
-	size_t len = (size_t)(end - base);
-	if (len >= n) {
-		len = n - 1;
+	char stem[128];
+	if (desk_app_script_stem(out, stem, sizeof stem)) {
+		str_copy(out, n, stem);
 	}
-	memcpy(out, base, len);
-	out[len] = '\0';
 }
 
 const struct desk_app *desk_apps_match(const struct desk_app_list *list,
@@ -1766,14 +1861,30 @@ const struct desk_app *desk_apps_match(const struct desk_app_list *list,
 	if (!list) {
 		return NULL;
 	}
-	const char *keys[3] = { app_id, wm_class, wm_instance };
+	/* what the window calls itself, and the same without a script's ending
+	 * (mintinstall.py is mintinstall); an interpreter's name (python3) is
+	 * no clue at all to which program it is */
+	const char *given[3] = { app_id, wm_class, wm_instance };
+	const char *keys[6] = { NULL };
+	char stems[3][128];
+	for (int k = 0; k < 3; k++) {
+		if (desk_app_is_interpreter(given[k])) {
+			continue;
+		}
+		keys[k] = given[k];
+		if (desk_app_script_stem(given[k], stems[k], sizeof stems[k])) {
+			keys[3 + k] = stems[k];
+		}
+	}
 	char buf[160];
 	/* the desktop file it names, exactly */
-	if (app_id && *app_id) {
-		snprintf(buf, sizeof buf, "%s.desktop", app_id);
-		const struct desk_app *a = desk_apps_find(list, buf);
-		if (a) {
-			return a;
+	for (int k = 0; k < 6; k += 3) {
+		if (keys[k] && *keys[k]) {
+			snprintf(buf, sizeof buf, "%s.desktop", keys[k]);
+			const struct desk_app *a = desk_apps_find(list, buf);
+			if (a) {
+				return a;
+			}
 		}
 	}
 	for (int pass = 0; pass < 4; pass++) {
@@ -1784,7 +1895,7 @@ const struct desk_app *desk_apps_match(const struct desk_app_list *list,
 			const char *dot = strrchr(stem, '.');
 			str_copy(last, sizeof last, dot ? dot + 1 : stem);
 			exec_prog(a->exec, prog, sizeof prog);
-			for (int k = 0; k < 3; k++) {
+			for (int k = 0; k < 6; k++) {
 				const char *key = keys[k];
 				if (!key || !*key) {
 					continue;
